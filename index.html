@@ -1329,9 +1329,12 @@
 
         <!-- Tracker -->
         <div class="page" id="page-tracker">
-          <div class="ph">
-            <h2>審核追蹤</h2>
-            <p>查詢所有申請的審核狀態與進度</p>
+          <div class="ph" style="display:flex;align-items:flex-start;justify-content:space-between">
+            <div>
+              <h2>審核追蹤</h2>
+              <p>即時從 Notion 拉取請假與報帳申請資料</p>
+            </div>
+            <button class="btn btnsm" onclick="loadNotionData()">↻ 重新整理</button>
           </div>
           <div class="stats" id="trk-stats"></div>
           <div class="card" style="padding:16px 20px">
@@ -1491,7 +1494,7 @@
       document.getElementById('page-' + id).classList.add('active');
       if (el) el.classList.add('active');
       document.getElementById('topbar-title').textContent = PAGE_TITLES[id] || id;
-      if (id === 'tracker') renderTracker();
+      if (id === 'tracker') loadNotionData();
     }
 
     // ── Leave ──────────────────────────────────────────────
@@ -1657,6 +1660,56 @@
         note: document.getElementById('c-note').value
       };
       pushNotion('checkin', data);
+    }
+
+    // ── Notion 資料載入 ────────────────────────────────────
+    function gp(props, key, type) {
+      var p = props[key];
+      if (!p) return '';
+      if (type === 'title') return p.title && p.title[0] ? p.title[0].plain_text : '';
+      if (type === 'text') return p.rich_text && p.rich_text[0] ? p.rich_text[0].plain_text : '';
+      if (type === 'select') return p.select ? p.select.name : '';
+      if (type === 'number') return p.number || 0;
+      return '';
+    }
+    function loadNotionData() {
+      document.getElementById('trk-list').innerHTML = '<div class="card"><div class="empty">從 Notion 載入中...</div></div>';
+      var headers = { 'Content-Type': 'application/json', 'x-notion-token': nToken };
+      var body = JSON.stringify({ page_size: 100, sorts: [{ timestamp: 'created_time', direction: 'descending' }] });
+      Promise.all([
+        fetch(API_BASE + '/api/notion/databases/' + nDBs.leave + '/query', { method: 'POST', headers: headers, body: body }).then(function (r) { return r.json(); }),
+        fetch(API_BASE + '/api/notion/databases/' + nDBs.expense + '/query', { method: 'POST', headers: headers, body: body }).then(function (r) { return r.json(); })
+      ]).then(function (res) {
+        RECORDS = [];
+        var leaveResults = res[0].results || [];
+        var expenseResults = res[1].results || [];
+        leaveResults.forEach(function (page) {
+          var p = page.properties;
+          var status = gp(p, '審核狀態', 'select') || '待審核';
+          var step = status === '已核准' ? 4 : status === '已駁回' ? -1 : 1;
+          RECORDS.push({
+            id: gp(p, '申請編號', 'title') || page.id.slice(0, 8),
+            type: 'leave', name: gp(p, '姓名', 'text'), dept: gp(p, '部門', 'select'),
+            title: gp(p, '假別', 'select') + ' ' + gp(p, '請假天數', 'number') + ' 天',
+            status: status, step: step, date: page.created_time.split('T')[0]
+          });
+        });
+        expenseResults.forEach(function (page) {
+          var p = page.properties;
+          var rawStatus = gp(p, '審核狀態', 'select') || '待主管審核';
+          var dispStatus = rawStatus === '已核准' ? '已核准' : rawStatus === '已駁回' ? '已駁回' : '待審核';
+          var step = rawStatus === '已核准' ? 4 : rawStatus === '已駁回' ? -1 : rawStatus === '待財務確認' ? 2 : 1;
+          RECORDS.push({
+            id: gp(p, '申請編號', 'title') || page.id.slice(0, 8),
+            type: 'expense', name: gp(p, '姓名', 'text'), dept: gp(p, '部門', 'select'),
+            title: '報帳 NT$' + Number(gp(p, '合計金額', 'number')).toLocaleString(),
+            status: dispStatus, step: step, date: page.created_time.split('T')[0]
+          });
+        });
+        renderTracker();
+      }).catch(function () {
+        document.getElementById('trk-list').innerHTML = '<div class="card"><div class="empty">載入失敗，請確認 Notion 連線設定</div></div>';
+      });
     }
 
     // ── Tracker ────────────────────────────────────────────
