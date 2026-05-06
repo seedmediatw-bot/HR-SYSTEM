@@ -999,15 +999,6 @@
           <span>員工簽到</span>
         </div>
         <div class="nav-sec">查詢</div>
-        <div class="nav-item" onclick="navTo('directory',this)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-          </svg>
-          <span>員工查詢</span>
-        </div>
         <div class="nav-item" onclick="navTo('tracker',this)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -1184,6 +1175,7 @@
             <div class="ct">補充說明</div>
             <div class="grid1">
               <div class="fg"><label>專案 / 用途</label><input type="text" id="e-project" placeholder="例：Q2 行銷活動"></div>
+              <div class="fg"><label>收據 / 發票連結</label><input type="text" id="e-receipt" placeholder="貼上 Google Drive 或 OneDrive 的分享連結"></div>
               <div class="fg"><label>備註</label><textarea id="e-note" placeholder="其他補充說明..."></textarea></div>
             </div>
             <div class="notice">請檢附收據或發票，財務部審核後 5 個工作天內匯款。</div>
@@ -1332,51 +1324,6 @@
           <div style="display:flex;gap:10px;justify-content:flex-end">
             <button class="btn" onclick="resetCheckin()">清除</button>
             <button class="btn btnp" onclick="submitCheckin()">送出簽到</button>
-          </div>
-        </div>
-
-        <!-- Directory -->
-        <div class="page" id="page-directory">
-          <div class="ph">
-            <h2>員工查詢</h2>
-            <p>查詢員工基本資料與聯絡方式</p>
-          </div>
-          <div class="card" style="padding:16px 20px">
-            <div style="display:grid;grid-template-columns:1fr 160px 130px;gap:10px">
-              <input type="text" id="dir-q" placeholder="搜尋姓名、Email 或員工編號..." oninput="renderDir()">
-              <select id="dir-dept" onchange="renderDir()">
-                <option value="">所有部門</option>
-                <option>工程部</option>
-                <option>行銷部</option>
-                <option>人事部</option>
-                <option>財務部</option>
-                <option>業務部</option>
-              </select>
-              <select id="dir-status" onchange="renderDir()">
-                <option value="">所有狀態</option>
-                <option>在職</option>
-                <option>試用期</option>
-                <option>留職停薪</option>
-              </select>
-            </div>
-          </div>
-          <div class="card" id="dir-detail" style="display:none"></div>
-          <div class="card" style="padding:0">
-            <div class="tw">
-              <table>
-                <thead>
-                  <tr>
-                    <th>姓名</th>
-                    <th>部門</th>
-                    <th>職稱</th>
-                    <th>Email</th>
-                    <th>年資</th>
-                    <th>狀態</th>
-                  </tr>
-                </thead>
-                <tbody id="dir-body"></tbody>
-              </table>
-            </div>
           </div>
         </div>
 
@@ -1531,7 +1478,6 @@
       checkin: '2c99853a8c8c477aac90d188ad2362ce'
     };
     var RECORDS = [];
-    var DIR_DATA = [];
     var eiCount = 0;
     var aiOpen = false;
     var AVCOLS = [['#E6F1FB', '#0C447C'], ['#E1F5EE', '#085041'], ['#FAEEDA', '#633806'], ['#EEEDFE', '#3C3489'], ['#FAECE7', '#712B13'], ['#EAF3DE', '#27500A']];
@@ -1545,7 +1491,6 @@
       document.getElementById('page-' + id).classList.add('active');
       if (el) el.classList.add('active');
       document.getElementById('topbar-title').textContent = PAGE_TITLES[id] || id;
-      if (id === 'directory') renderDir();
       if (id === 'tracker') renderTracker();
     }
 
@@ -1619,7 +1564,7 @@
     }
     function resetExpense() {
       document.getElementById('ei-list').innerHTML = '';
-      ['e-name', 'e-empid', 'e-bank', 'e-project', 'e-note'].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ''; });
+      ['e-name', 'e-empid', 'e-bank', 'e-project', 'e-receipt', 'e-note'].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ''; });
       document.getElementById('e-dept').selectedIndex = 0;
       document.getElementById('ei-total').textContent = '0';
       eiCount = 0;
@@ -1641,6 +1586,7 @@
         empid: document.getElementById('e-empid').value,
         bank: document.getElementById('e-bank').value,
         project: document.getElementById('e-project').value,
+        receipt: document.getElementById('e-receipt').value,
         note: document.getElementById('e-note').value
       };
       pushNotion('expense', data);
@@ -1713,57 +1659,6 @@
       pushNotion('checkin', data);
     }
 
-    // ── Directory ──────────────────────────────────────────
-    function avStyle(idx) { var c = AVCOLS[idx % AVCOLS.length]; return 'background:' + c[0] + ';color:' + c[1]; }
-    function initials(n) { return n.slice(0, 2); }
-    function tenure(join) {
-      var d = new Date(join), now = new Date();
-      var y = now.getFullYear() - d.getFullYear(), m = now.getMonth() - d.getMonth();
-      if (m < 0) { y--; m += 12; }
-      return y > 0 ? y + '年' + (m > 0 ? m + '月' : '') : m + '月';
-    }
-    function stag(s) {
-      if (s === '在職') return '<span class="tag tgreen">' + s + '</span>';
-      if (s === '試用期') return '<span class="tag tyellow">' + s + '</span>';
-      return '<span class="tag tgray">' + s + '</span>';
-    }
-    function renderDir() {
-      var q = (document.getElementById('dir-q').value || '').toLowerCase();
-      var dept = document.getElementById('dir-dept').value;
-      var status = document.getElementById('dir-status').value;
-      var f = DIR_DATA.filter(function (e) {
-        return (!q || e.name.indexOf(q) > -1 || e.email.indexOf(q) > -1 || e.id.toLowerCase().indexOf(q) > -1)
-          && (!dept || e.dept === dept) && (!status || e.status === status);
-      });
-      document.getElementById('dir-body').innerHTML = f.length ? f.map(function (e) {
-        var idx = DIR_DATA.indexOf(e);
-        return '<tr onclick="showEmp(\'' + e.id + '\')" style="cursor:pointer">'
-          + '<td><div style="display:flex;align-items:center;gap:10px"><div class="av" style="' + avStyle(idx) + '">' + initials(e.name) + '</div>'
-          + '<div><div style="font-weight:500">' + e.name + '</div><div style="font-size:11px;color:var(--text3)">' + e.id + '</div></div></div></td>'
-          + '<td>' + e.dept + '</td><td>' + e.title + '</td>'
-          + '<td style="color:var(--accent)">' + e.email + '</td>'
-          + '<td>' + tenure(e.join) + '</td><td>' + stag(e.status) + '</td></tr>';
-      }).join('') : '<tr><td colspan="6" class="empty">尚無員工資料，入職報到後將自動顯示。</td></tr>';
-    }
-    function showEmp(id) {
-      var e = DIR_DATA.find(function (x) { return x.id === id; });
-      if (!e) return;
-      var idx = DIR_DATA.indexOf(e);
-      var d = document.getElementById('dir-detail');
-      d.style.display = 'block';
-      d.innerHTML = '<div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">'
-        + '<div class="av" style="' + avStyle(idx) + ';width:52px;height:52px;font-size:16px">' + initials(e.name) + '</div>'
-        + '<div style="flex:1"><div style="font-size:16px;font-weight:700">' + e.name + ' <span style="font-size:12px;font-weight:400;color:var(--text3)">' + e.id + '</span></div>'
-        + '<div style="font-size:13px;color:var(--text2)">' + e.dept + ' · ' + e.title + '</div></div>'
-        + stag(e.status)
-        + '<button class="btn btnsm" onclick="document.getElementById(\'dir-detail\').style.display=\'none\'">關閉</button></div>'
-        + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:13px">'
-        + '<div><div style="font-size:11px;color:var(--text3);margin-bottom:2px">Email</div><div style="color:var(--accent)">' + e.email + '</div></div>'
-        + '<div><div style="font-size:11px;color:var(--text3);margin-bottom:2px">電話</div><div>' + (e.phone || '-') + '</div></div>'
-        + '<div><div style="font-size:11px;color:var(--text3);margin-bottom:2px">到職日</div><div>' + e.join + '（' + tenure(e.join) + '）</div></div>'
-        + '<div><div style="font-size:11px;color:var(--text3);margin-bottom:2px">直屬主管</div><div>' + (e.manager || '-') + '</div></div></div>';
-    }
-
     // ── Tracker ────────────────────────────────────────────
     function renderTracker() {
       var q = (document.getElementById('trk-q').value || '').toLowerCase();
@@ -1829,12 +1724,6 @@
               title: type === 'leave' ? data.type + ' ' + data.days + ' 天' : type === 'checkin' ? data.date + ' 簽到' : '報帳 NT$' + data.total,
               status: type === 'checkin' ? '已記錄' : '待審核', step: type === 'checkin' ? 4 : 1, date: new Date().toISOString().split('T')[0]
             });
-          } else {
-            DIR_DATA.unshift({
-              id: id, name: data.name, dept: data.dept, title: data.title,
-              email: data.email, phone: data.phone, join: data.joinDate, status: '試用期', manager: data.manager
-            });
-            renderDir();
           }
           showToast('已成功同步至 Notion！', 'ok');
           addAIMsg('bot', '✅ ' + data.name + ' 的申請已送出並同步至 Notion！編號 ' + id + '。');
@@ -1858,7 +1747,8 @@
       return {
         '申請編號': { title: rt(id) }, '姓名': { rich_text: rt(d.name) }, '部門': { select: { name: d.dept } },
         '合計金額': { number: parseInt(d.total.replace(/,/g, '')) || 0 }, '費用明細': { rich_text: rt(items) },
-        '專案用途': { rich_text: rt(d.project) }, '帳號末5碼': { rich_text: rt(d.bank) }, '審核狀態': { select: { name: '待主管審核' } }
+        '專案用途': { rich_text: rt(d.project) }, '帳號末5碼': { rich_text: rt(d.bank) },
+        '收據連結': { url: d.receipt || null }, '審核狀態': { select: { name: '待主管審核' } }
       };
     }
     function buildOnboardingProps(d) {
@@ -1979,7 +1869,6 @@
       }
     }).catch(function () { });
     updateNotionUI();
-    renderDir();
     renderTracker();
     document.getElementById('c-date').value = new Date().toISOString().split('T')[0];
   </script>
