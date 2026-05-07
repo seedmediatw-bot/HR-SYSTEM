@@ -1165,9 +1165,12 @@
 
         <!-- Dashboard -->
         <div class="page active" id="page-dashboard">
-          <div class="ph">
-            <h2>總覽</h2>
-            <p>今日概況與快速操作</p>
+          <div class="ph" style="display:flex;align-items:flex-start;justify-content:space-between">
+            <div>
+              <h2>總覽</h2>
+              <p>今日概況與快速操作</p>
+            </div>
+            <button class="btn btnsm" onclick="loadDashboard()">↻ 重新整理</button>
           </div>
           <div class="stats">
             <div class="stat">
@@ -1668,6 +1671,7 @@
       document.getElementById('page-' + id).classList.add('active');
       if (el) el.classList.add('active');
       document.getElementById('topbar-title').textContent = PAGE_TITLES[id] || id;
+      if (id === 'dashboard') loadDashboard();
       if (id === 'tracker') loadNotionData();
       if (id === 'accounts') loadAccounts();
       // 手機版：選完頁面後自動關閉選單
@@ -1837,6 +1841,68 @@
         note: document.getElementById('c-note').value
       };
       pushNotion('checkin', data);
+    }
+
+    // ── Dashboard ──────────────────────────────────────────
+    function loadDashboard() {
+      ['s-pending','s-approved','s-emp','s-expense'].forEach(function(id){ document.getElementById(id).textContent = '…'; });
+      document.getElementById('dash-recent').innerHTML = '<div class="empty">載入中...</div>';
+      var headers = { 'Content-Type': 'application/json', 'x-notion-token': nToken };
+      var body = JSON.stringify({ page_size: 100, sorts: [{ timestamp: 'created_time', direction: 'descending' }] });
+      var thisMonth = new Date().toISOString().slice(0, 7);
+      Promise.all([
+        fetch(API_BASE + '/api/notion/databases/' + nDBs.leave    + '/query', { method:'POST', headers:headers, body:body }).then(function(r){ return r.json(); }),
+        fetch(API_BASE + '/api/notion/databases/' + nDBs.expense  + '/query', { method:'POST', headers:headers, body:body }).then(function(r){ return r.json(); }),
+        fetch(API_BASE + '/api/notion/databases/' + nDBs.employees+ '/query', { method:'POST', headers:headers, body:body }).then(function(r){ return r.json(); })
+      ]).then(function(res) {
+        var leaves   = res[0].results || [];
+        var expenses = res[1].results || [];
+        var emps     = res[2].results || [];
+        // 待審核
+        var pending = 0;
+        leaves.forEach(function(p){ var s=gp(p.properties,'審核狀態','select')||'待審核'; if(s!=='已核准'&&s!=='已駁回') pending++; });
+        expenses.forEach(function(p){ var s=gp(p.properties,'審核狀態','select')||'待主管審核'; if(s!=='已核准'&&s!=='已駁回') pending++; });
+        // 本月已核准
+        var approved = 0;
+        leaves.forEach(function(p){ if(gp(p.properties,'審核狀態','select')==='已核准'&&p.created_time.startsWith(thisMonth)) approved++; });
+        expenses.forEach(function(p){ if(gp(p.properties,'審核狀態','select')==='已核准'&&p.created_time.startsWith(thisMonth)) approved++; });
+        // 在職人數
+        var activeEmp = emps.filter(function(p){ var s=gp(p.properties,'在職狀態','select'); return s==='在職'||s==='試用期'; }).length;
+        // 本月報帳金額
+        var monthExp = 0;
+        expenses.forEach(function(p){ if(p.created_time.startsWith(thisMonth)) monthExp += gp(p.properties,'合計金額','number')||0; });
+        document.getElementById('s-pending').textContent = pending;
+        document.getElementById('s-approved').textContent = approved;
+        document.getElementById('s-emp').textContent = activeEmp;
+        document.getElementById('s-expense').textContent = 'NT$' + monthExp.toLocaleString();
+        // 近期申請
+        var recent = [];
+        leaves.forEach(function(p){
+          var s = gp(p.properties,'審核狀態','select')||'待審核';
+          recent.push({ name:gp(p.properties,'姓名','text'), type:'請假', detail:gp(p.properties,'假別','select')+' '+gp(p.properties,'請假天數','number')+'天', status:s, date:p.created_time.split('T')[0] });
+        });
+        expenses.forEach(function(p){
+          var s = gp(p.properties,'審核狀態','select')||'待主管審核';
+          recent.push({ name:gp(p.properties,'姓名','text'), type:'報帳', detail:'NT$'+Number(gp(p.properties,'合計金額','number')).toLocaleString(), status:s, date:p.created_time.split('T')[0] });
+        });
+        recent.sort(function(a,b){ return b.date.localeCompare(a.date); });
+        recent = recent.slice(0, 6);
+        if (!recent.length) {
+          document.getElementById('dash-recent').innerHTML = '<div class="empty">尚無申請紀錄</div>';
+        } else {
+          document.getElementById('dash-recent').innerHTML = recent.map(function(r){
+            var sc = r.status==='已核准' ? 'var(--success)' : r.status==='已駁回' ? 'var(--danger)' : 'var(--warning)';
+            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">'
+              +'<div><div style="font-size:13px;font-weight:500">'+(r.name||'—')+' <span style="font-size:11px;color:var(--text3);font-weight:400">'+r.type+'</span></div>'
+              +'<div style="font-size:12px;color:var(--text2);margin-top:2px">'+r.detail+' · '+r.date+'</div></div>'
+              +'<span style="font-size:11px;padding:3px 8px;border-radius:6px;background:var(--surface2);color:'+sc+';font-weight:500;white-space:nowrap">'+r.status+'</span>'
+              +'</div>';
+          }).join('');
+        }
+      }).catch(function(){
+        ['s-pending','s-approved','s-emp','s-expense'].forEach(function(id){ document.getElementById(id).textContent = '—'; });
+        document.getElementById('dash-recent').innerHTML = '<div class="empty">載入失敗，請確認 Notion 連線</div>';
+      });
     }
 
     // ── Notion 資料載入 ────────────────────────────────────
@@ -2183,6 +2249,7 @@
     }).catch(function () { });
     updateNotionUI();
     renderTracker();
+    loadDashboard();
     document.getElementById('c-date').value = new Date().toISOString().split('T')[0];
   </script>
 </body>
