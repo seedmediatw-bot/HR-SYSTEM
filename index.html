@@ -1328,7 +1328,7 @@
 
             <!-- AI 辨識模式 -->
             <div id="scan-mode-ai" style="display:none">
-              <div class="notice" style="margin-bottom:12px">AI 自動辨識發票內容並填入費用明細。需先在「Notion 設定」填入 Gemini API Key。</div>
+              <div class="notice" style="margin-bottom:12px">AI 自動辨識發票內容並填入費用明細。Gemini API Key 由管理員設定於 Cloudflare Worker。</div>
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 <label class="btn btnsm" style="cursor:pointer;background:var(--accent);color:#fff;border-color:var(--accent)">
                   📷 即時拍照
@@ -1624,18 +1624,6 @@
             </div>
           </div>
           <div class="card">
-            <div class="ct">AI 發票辨識 — Gemini API Key</div>
-            <div class="notice">取得方式：前往 <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">aistudio.google.com/apikey</a> 建立 API Key。Key 只會存在本機 localStorage，不會上傳。</div>
-            <div class="fg" style="margin-bottom:12px">
-              <label>Gemini API Key</label>
-              <div class="trwrap">
-                <input type="password" id="gemini-key" placeholder="AIza...">
-                <span class="trtoggle" onclick="(function(){var i=document.getElementById('gemini-key'),b=this;if(i.type==='password'){i.type='text';b.textContent='隱藏';}else{i.type='password';b.textContent='顯示';}}).call(this)">顯示</span>
-              </div>
-            </div>
-            <button class="btn btnp btnsm" onclick="saveGeminiKey()">儲存 API Key</button>
-          </div>
-          <div class="card">
             <div class="ct">串接狀態</div>
             <div id="nstatus-detail" style="font-size:13px;color:var(--text3)">尚未設定。</div>
           </div>
@@ -1705,7 +1693,6 @@
       checkin: '2c99853a8c8c477aac90d188ad2362ce',
       accounts: '4a4198896f524cf8be6beda5e6778483'
     };
-    var GEMINI_API_KEY = localStorage.getItem('geminiKey') || '';
     var RECORDS = [];
     var eiCount = 0;
     var aiOpen = false;
@@ -1909,7 +1896,7 @@
           return { inlineData: { mimeType: img.mimeType, data: img.data } };
         });
         parts.push({ text: '請辨識這' + images.length + '張發票/收據。只回傳 JSON 陣列，不要其他文字，格式：[{"desc":"費用說明","cat":"交通費","date":"YYYY-MM-DD","amount":數字},...]。類別只能是：' + CATS.join('、') + '。' });
-        return fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_API_KEY, {
+        return fetch(API_BASE + '/api/gemini', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contents: [{ parts: parts }] })
@@ -1939,12 +1926,6 @@
         document.getElementById('ai-scan-btn').disabled = false;
       });
     }
-    function saveGeminiKey() {
-      GEMINI_API_KEY = document.getElementById('gemini-key').value.trim();
-      localStorage.setItem('geminiKey', GEMINI_API_KEY);
-      showToast('Gemini API Key 已儲存', 'ok');
-    }
-
     // ── Onboarding ─────────────────────────────────────────
     function obStep(step) {
       if (step === 2 && !obVal1()) return;
@@ -2278,7 +2259,6 @@
         : '尚未設定 Notion Token。';
       if (nToken) document.getElementById('notion-token').value = nToken;
       ['leave', 'expense', 'employees', 'approvals', 'checkin', 'accounts'].forEach(function (k) { var el = document.getElementById('db-' + k); if (el) el.value = nDBs[k] || ''; });
-      var gEl = document.getElementById('gemini-key'); if (gEl) gEl.value = GEMINI_API_KEY;
     }
     function toggleTok() {
       var i = document.getElementById('notion-token'), b = document.querySelector('.trtoggle');
