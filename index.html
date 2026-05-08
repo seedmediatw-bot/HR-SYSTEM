@@ -2404,15 +2404,15 @@
       if (!text) return; inp.value = ''; addAIMsg('user', text);
       var loading = document.createElement('div'); loading.className = 'aimsg bot'; loading.textContent = '思考中...';
       document.getElementById('aimsgs').appendChild(loading);
-      fetch(API_BASE + '/api/claude', {
+      fetch(API_BASE + '/api/gemini', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001', max_tokens: 1000,
-          system: '你是 HR 系統的 AI 助理，協助使用者操作系統（請假、報帳、入職、查詢、Notion 設定）。請用繁體中文簡潔回答，不超過 120 字。',
-          messages: [{ role: 'user', content: text }]
+          model: 'gemini-2.0-flash',
+          systemInstruction: { parts: [{ text: '你是 HR 系統的 AI 助理，協助使用者操作系統（請假、報帳、入職、查詢、Notion 設定）。請用繁體中文簡潔回答，不超過 120 字。' }] },
+          contents: [{ role: 'user', parts: [{ text: text }] }]
         })
       }).then(function (r) { return r.json(); })
-        .then(function (data) { loading.remove(); addAIMsg('bot', (data.content && data.content[0] && data.content[0].text) || '抱歉，暫時無法回應。'); })
+        .then(function (data) { loading.remove(); addAIMsg('bot', (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text) || '抱歉，暫時無法回應。'); })
         .catch(function () { loading.remove(); addAIMsg('bot', '連線發生錯誤，請稍後再試。'); });
     }
 
