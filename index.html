@@ -1798,6 +1798,9 @@
       document.getElementById('e-dept').selectedIndex = 0;
       document.getElementById('ei-total').textContent = '0';
       eiCount = 0;
+      _normalPhotos = []; _normalPhotoFiles = [];
+      document.getElementById('normal-photo-list').innerHTML = '';
+      document.getElementById('normal-photo-empty').style.display = '';
     }
     function submitExpense() {
       var name = document.getElementById('e-name').value;
@@ -1819,12 +1822,34 @@
         receipt: document.getElementById('e-receipt').value,
         note: document.getElementById('e-note').value
       };
-      pushNotion('expense', data);
+      var photoFiles = _normalPhotoFiles.filter(function(f){ return f; });
+      if (!photoFiles.length) { pushNotion('expense', data); return; }
+      showToast('上傳收據中（' + photoFiles.length + ' 張）...', '');
+      Promise.all(photoFiles.map(function(file, i){
+        return new Promise(function(resolve){
+          var reader = new FileReader();
+          reader.onload = function(e){
+            fetch(API_BASE + '/api/notion-upload', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-notion-token': nToken },
+              body: JSON.stringify({ base64: e.target.result.split(',')[1], mimeType: file.type || 'image/jpeg', filename: file.name || ('receipt-' + (i+1) + '.jpg') })
+            }).then(function(r){ return r.json(); }).then(function(d){ resolve(d.id || null); }).catch(function(){ resolve(null); });
+          };
+          reader.onerror = function(){ resolve(null); };
+          reader.readAsDataURL(file);
+        });
+      })).then(function(ids){
+        pushNotion('expense', data, ids.filter(function(id){ return id; }));
+      }).catch(function(){
+        showToast('收據上傳失敗，仍嘗試送出...', 'err');
+        pushNotion('expense', data);
+      });
     }
 
     // ── AI 發票辨識 ────────────────────────────────────────
-    var _invoiceFiles = [];   // AI 模式累積圖片
-    var _normalPhotos = [];   // 一般模式縮圖 blob URLs
+    var _invoiceFiles = [];      // AI 模式累積圖片
+    var _normalPhotos = [];      // 一般模式縮圖 blob URLs
+    var _normalPhotoFiles = [];  // 一般模式 File 物件（上傳用）
 
     function switchScanMode(mode) {
       var isAI = mode === 'ai';
@@ -1841,6 +1866,7 @@
         var url = URL.createObjectURL(file);
         var idx = _normalPhotos.length;
         _normalPhotos.push(url);
+        _normalPhotoFiles.push(file);
         var wrap = document.createElement('div');
         wrap.style.cssText = 'position:relative;width:72px;height:72px;flex-shrink:0';
         wrap.id = 'nphoto-' + idx;
@@ -1855,6 +1881,7 @@
     function removeNormalPhoto(idx) {
       URL.revokeObjectURL(_normalPhotos[idx]);
       _normalPhotos[idx] = null;
+      _normalPhotoFiles[idx] = null;
       var el = document.getElementById('nphoto-' + idx);
       if (el) el.remove();
       var any = _normalPhotos.some(function(u){ return u; });
@@ -2144,7 +2171,17 @@
     }
 
     // ── Notion ─────────────────────────────────────────────
-    function pushNotion(type, data) {
+    function appendImageBlocks(pageId, fileIds) {
+      var blocks = fileIds.map(function(fid){
+        return { object:'block', type:'image', image:{ type:'file_upload', file_upload:{ id: fid } } };
+      });
+      fetch(API_BASE + '/api/notion/blocks/' + pageId + '/children', {
+        method: 'PATCH',
+        headers: { 'Content-Type':'application/json', 'x-notion-token': nToken },
+        body: JSON.stringify({ children: blocks })
+      });
+    }
+    function pushNotion(type, data, fileIds) {
       var dbId = type === 'onboarding' ? nDBs.employees : type === 'leave' ? nDBs.leave : type === 'expense' ? nDBs.expense : nDBs.checkin;
       if (!nToken || !dbId) {
         showToast('請先設定 Notion Token 和 Database ID', 'err');
@@ -2163,16 +2200,19 @@
         body: JSON.stringify({ parent: { database_id: dbId }, properties: props })
       }).then(function (res) {
         if (res.ok) {
-          var id = (type === 'leave' ? 'REQ' : type === 'expense' ? 'EXP' : 'EMP') + '-' + String(Date.now()).slice(-4);
-          if (type !== 'onboarding') {
-            RECORDS.unshift({
-              id: id, type: type, name: data.name, dept: data.dept || '',
-              title: type === 'leave' ? data.type + ' ' + data.days + ' 天' : type === 'checkin' ? data.date + ' 簽到' : '報帳 NT$' + data.total,
-              status: type === 'checkin' ? '已記錄' : '待審核', step: type === 'checkin' ? 4 : 1, date: new Date().toISOString().split('T')[0]
-            });
-          }
-          showToast('已成功同步至 Notion！', 'ok');
-          addAIMsg('bot', '✅ ' + data.name + ' 的申請已送出並同步至 Notion！編號 ' + id + '。');
+          return res.json().then(function(page) {
+            var id = (type === 'leave' ? 'REQ' : type === 'expense' ? 'EXP' : 'EMP') + '-' + String(Date.now()).slice(-4);
+            if (type !== 'onboarding') {
+              RECORDS.unshift({
+                id: id, type: type, name: data.name, dept: data.dept || '',
+                title: type === 'leave' ? data.type + ' ' + data.days + ' 天' : type === 'checkin' ? data.date + ' 簽到' : '報帳 NT$' + data.total,
+                status: type === 'checkin' ? '已記錄' : '待審核', step: type === 'checkin' ? 4 : 1, date: new Date().toISOString().split('T')[0]
+              });
+            }
+            showToast('已成功同步至 Notion！', 'ok');
+            addAIMsg('bot', '✅ ' + data.name + ' 的申請已送出並同步至 Notion！編號 ' + id + '。');
+            if (fileIds && fileIds.length && page.id) appendImageBlocks(page.id, fileIds);
+          });
         } else {
           res.json().then(function (err) { showToast('送出失敗：' + (err.message || '請確認設定'), 'err'); });
         }
