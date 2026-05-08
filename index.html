@@ -2234,6 +2234,8 @@
         '申請編號': { title: rt(id) }, '姓名': { rich_text: rt(d.name) }, '部門': { select: { name: d.dept } },
         '合計金額': { number: parseInt(d.total.replace(/,/g, '')) || 0 }, '費用明細': { rich_text: rt(items) },
         '專案用途': { rich_text: rt(d.project) }, '帳號末5碼': { rich_text: rt(d.bank) },
+        '員工編號': { rich_text: rt(d.empid || '') },
+        '備註': { rich_text: rt([d.note, d.receipt ? '收據連結：' + d.receipt : ''].filter(Boolean).join('\n')) },
         '審核狀態': { select: { name: '待主管審核' } }
       };
     }
